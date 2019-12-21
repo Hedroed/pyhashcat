@@ -194,7 +194,7 @@ static void event_dispatch(char *esignal, hashcat_ctx_t * hashcat_ctx, const voi
             else
             {
 
-              args = Py_BuildValue("(O)", handlers[ref].hc_self);
+              args = Py_BuildValue("(O,s#,s)", handlers[ref].hc_self, buf, len, esignal);
               result = PyObject_Call(handlers[ref].callback, args, NULL);
 
               if(PyErr_Occurred())
@@ -224,7 +224,7 @@ static void event (const u32 id, hashcat_ctx_t * hashcat_ctx, const void *buf, c
     case EVENT_AUTOTUNE_STARTING:               size = asprintf(&esignal, "%s", "EVENT_AUTOTUNE_STARTING"); break;
     case EVENT_BITMAP_INIT_POST:                size = asprintf(&esignal, "%s", "EVENT_BITMAP_INIT_POST"); break;
     case EVENT_BITMAP_INIT_PRE:                 size = asprintf(&esignal, "%s", "EVENT_BITMAP_INIT_PRE"); break;
-    case EVENT_BITMAP_FINAL_OVERFLOW:     	size = asprintf(&esignal, "%s", "EVENT_BITMAP_FINAL_OVERFLOW"); break;
+    case EVENT_BITMAP_FINAL_OVERFLOW:           size = asprintf(&esignal, "%s", "EVENT_BITMAP_FINAL_OVERFLOW"); break;
     case EVENT_CALCULATED_WORDS_BASE:           size = asprintf(&esignal, "%s", "EVENT_CALCULATED_WORDS_BASE"); break;
     case EVENT_CRACKER_FINISHED:                size = asprintf(&esignal, "%s", "EVENT_CRACKER_FINISHED"); break;
     case EVENT_CRACKER_HASH_CRACKED:            size = asprintf(&esignal, "%s", "EVENT_CRACKER_HASH_CRACKED"); break;
@@ -255,10 +255,10 @@ static void event (const u32 id, hashcat_ctx_t * hashcat_ctx, const void *buf, c
     case EVENT_MONITOR_PERFORMANCE_HINT:        size = asprintf(&esignal, "%s", "EVENT_MONITOR_PERFORMANCE_HINT"); break;
     case EVENT_MONITOR_NOINPUT_HINT:            size = asprintf(&esignal, "%s", "EVENT_MONITOR_NOINPUT_HINT"); break;
     case EVENT_MONITOR_NOINPUT_ABORT:           size = asprintf(&esignal, "%s", "EVENT_MONITOR_NOINPUT_ABORT"); break;
-    case EVENT_BACKEND_SESSION_POST:             size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_POST"); break;
-    case EVENT_BACKEND_SESSION_PRE:              size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_PRE"); break;
-    case EVENT_BACKEND_DEVICE_INIT_POST:         size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_PRE"); break;
-    case EVENT_BACKEND_DEVICE_INIT_PRE:          size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_PRE"); break;
+    case EVENT_BACKEND_SESSION_POST:            size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_POST"); break;
+    case EVENT_BACKEND_SESSION_PRE:             size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_PRE"); break;
+    case EVENT_BACKEND_DEVICE_INIT_POST:        size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_PRE"); break;
+    case EVENT_BACKEND_DEVICE_INIT_PRE:         size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_PRE"); break;
     case EVENT_OUTERLOOP_FINISHED:              size = asprintf(&esignal, "%s", "EVENT_OUTERLOOP_FINISHED"); break;
     case EVENT_OUTERLOOP_MAINSCREEN:            size = asprintf(&esignal, "%s", "EVENT_OUTERLOOP_MAINSCREEN"); break;
     case EVENT_OUTERLOOP_STARTING:              size = asprintf(&esignal, "%s", "EVENT_OUTERLOOP_STARTING"); break;
@@ -475,16 +475,9 @@ static void hashcat_dealloc (hashcatObject * self)
 
 static void *hc_session_exe_thread(void *params)
 {
-
- hashcatObject *self = (hashcatObject *) params;
- int rtn;
- rtn = hashcat_session_execute(self->hashcat_ctx);
-
- if(rtn)
-  rtn = rtn;
-
- return NULL;
-
+  hashcatObject *self = (hashcatObject *) params;
+  hashcat_session_execute(self->hashcat_ctx);
+  return NULL;
 }
 
 PyDoc_STRVAR(hashcat_session_execute__doc__,
@@ -504,54 +497,31 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
     return NULL;
   }
 
+  const PyObject *bad_rtn_code = Py_BuildValue ("i", -1);
+  if (self->user_options->example_hashes == true) return bad_rtn_code;
+  if (self->user_options->keyspace       == true) return bad_rtn_code;
+  if (self->user_options->backend_info   == true) return bad_rtn_code;
+  if (self->user_options->usage          == true) return bad_rtn_code;
+  if (self->user_options->version        == true) return bad_rtn_code;
+  // if (self->user_options->show           == true) return bad_rtn_code;
+  // if (self->user_options->left           == true) return bad_rtn_code;
+
+  Py_DECREF(bad_rtn_code);
+
   // Build argv
   size_t hc_argv_size = 1;
   char **hc_argv = (char **) calloc (hc_argv_size, sizeof (char *));
 
-  // Benchmark/usage are special cases
-  if (self->user_options->benchmark){
+  // Prepare hashcat argv from user_options attack_modes or benchmark 
+  if (self->user_options->benchmark)
+  {
+    // Benchmark/usage are special cases
     self->hc_argc = 1;
     hc_argv_size = self->hc_argc + 1;
     hc_argv = (char **) realloc (hc_argv, sizeof (char *) * (hc_argv_size));
     hc_argv[0] = NULL;
     self->user_options->hc_argc = self->hc_argc;
     self->user_options->hc_argv = hc_argv;
-
-  // Benchmark/usage are special cases
-  // Using backend_info to bypass hash requirement, but usage should be printed before executing
-  } else if (self->user_options->backend_info){
-    self->rc_init = hashcat_session_init (self->hashcat_ctx, py_path, hc_path, 0, NULL, 0);
-
-    if (self->rc_init != 0)
-    {
-
-      char *msg = hashcat_get_log (self->hashcat_ctx);
-
-      PyErr_SetString (PyExc_RuntimeError, msg);
-
-      Py_INCREF (Py_None);
-      return Py_None;
-
-    }
-
-    int rtn;
-    pthread_t hThread;
-
-    Py_BEGIN_ALLOW_THREADS
-
-    rtn = pthread_create(&hThread, NULL, &hc_session_exe_thread, (void *)self);
-
-    Py_END_ALLOW_THREADS
-
-    //usage_big_print (self->hashcat_ctx);
-
-    return Py_BuildValue ("i", rtn);
-
-  } else if (self->hash == NULL) {
-
-    PyErr_SetString (PyExc_RuntimeError, "Hash source not set");
-    Py_INCREF (Py_None);
-    return Py_None;
 
   } else {
 
@@ -700,14 +670,16 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
       Py_INCREF (Py_None);
       return Py_None;
 
-
     }
-
-
   }
 
-
-
+  // Using backend_info to bypass hash requirement
+  if ( !self->user_options->backend_info && self->hash == NULL)
+  {
+    PyErr_SetString (PyExc_RuntimeError, "Hash source not set");
+    Py_INCREF (Py_None);
+    return Py_None;
+  }
 
   /**
    *   !! IMPORTANT !!
@@ -720,15 +692,13 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
 
   if (self->rc_init != 0)
   {
-
     char *msg = hashcat_get_log (self->hashcat_ctx);
-
     PyErr_SetString (PyExc_RuntimeError, msg);
 
     Py_INCREF (Py_None);
     return Py_None;
-
   }
+  // return Py_BuildValue ("i", -1);
 
   int rtn;
   pthread_t hThread;
@@ -738,7 +708,6 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
   rtn = pthread_create(&hThread, NULL, &hc_session_exe_thread, (void *)self);
 
   Py_END_ALLOW_THREADS
-
 
   return Py_BuildValue ("i", rtn);
 }
@@ -814,6 +783,122 @@ static PyObject *hashcat_hashcat_session_quit (hashcatObject * self, PyObject * 
   return Py_BuildValue ("i", rtn);
 }
 
+
+PyDoc_STRVAR(hashcat_backend_info__doc__,
+"Return devices information as a Python String\n\n");
+
+static PyObject *hashcat_hashcat_backend_info (hashcatObject * self, PyObject * noargs)
+{
+  const hashcat_ctx_t *hashcat_ctx = self->hashcat_ctx;
+
+  const backend_ctx_t  *backend_ctx  = hashcat_ctx->backend_ctx;
+  // const user_options_t *user_options = hashcat_ctx->user_options;
+
+  if (backend_ctx->cuda)
+  {
+    int cuda_devices_cnt    = backend_ctx->cuda_devices_cnt;
+    int cuda_driver_version = backend_ctx->cuda_driver_version;
+    
+    PyObject *platforms_list = PyList_New(0);
+    PyObject *devices_list = PyList_New(0);
+
+    for (int cuda_devices_idx = 0; cuda_devices_idx < cuda_devices_cnt; cuda_devices_idx++)
+    {
+      const int backend_devices_idx = backend_ctx->backend_device_from_cuda[cuda_devices_idx];
+
+      const hc_device_param_t *device_param = backend_ctx->devices_param + backend_devices_idx;
+
+      int   device_id            = device_param->device_id;
+      char *device_name          = device_param->device_name;
+      u32   device_processors    = device_param->device_processors;
+      u64   device_global_mem    = device_param->device_global_mem;
+      u64   device_available_mem = device_param->device_available_mem;
+
+      PyObject *device_dict = PyDict_New();
+      PyDict_SetItemString(device_dict, "device_id", Py_BuildValue ("i", device_id));
+      PyDict_SetItemString(device_dict, "device_name", Py_BuildValue ("s", device_name));
+      PyDict_SetItemString(device_dict, "device_processors", Py_BuildValue ("i", device_processors));
+      PyDict_SetItemString(device_dict, "device_global_mem", PyLong_FromUnsignedLong (device_global_mem));
+      PyDict_SetItemString(device_dict, "device_available_mem", PyLong_FromUnsignedLong (device_available_mem));
+      PyDict_SetItemString(device_dict, "device_skipped", PyBool_FromLong (device_param->skipped));
+
+      PyList_Append(devices_list, device_dict);
+      Py_DECREF(device_dict);
+    }
+
+    PyObject *platform_dict = PyDict_New();
+    PyDict_SetItemString(platform_dict, "platform_type", Py_BuildValue ("s", "cuda"));
+    PyDict_SetItemString(platform_dict, "cuda_driver_version", Py_BuildValue ("i", cuda_driver_version));
+    PyDict_SetItemString(platform_dict, "devices", devices_list);
+
+    PyList_Append(platforms_list, platform_dict);
+    Py_DECREF(platform_dict);
+
+    return platforms_list;
+  }
+
+  if (backend_ctx->ocl)
+  {
+    cl_uint   opencl_platforms_cnt         = backend_ctx->opencl_platforms_cnt;
+    cl_uint  *opencl_platforms_devices_cnt = backend_ctx->opencl_platforms_devices_cnt;
+    char    **opencl_platforms_vendor      = backend_ctx->opencl_platforms_vendor;
+    char    **opencl_platforms_version     = backend_ctx->opencl_platforms_version;
+
+    PyObject *platforms_list = PyList_New(0);
+
+    for (cl_uint opencl_platforms_idx = 0; opencl_platforms_idx < opencl_platforms_cnt; opencl_platforms_idx++)
+    {
+      char     *opencl_platform_vendor       = opencl_platforms_vendor[opencl_platforms_idx];
+      char     *opencl_platform_version      = opencl_platforms_version[opencl_platforms_idx];
+      cl_uint   opencl_platform_devices_cnt  = opencl_platforms_devices_cnt[opencl_platforms_idx];
+
+      PyObject *devices_list = PyList_New(0);
+
+      for (cl_uint opencl_platform_devices_idx = 0; opencl_platform_devices_idx < opencl_platform_devices_cnt; opencl_platform_devices_idx++)
+      {
+        const int backend_devices_idx = backend_ctx->backend_device_from_opencl_platform[opencl_platforms_idx][opencl_platform_devices_idx];
+
+        const hc_device_param_t *device_param = backend_ctx->devices_param + backend_devices_idx;
+
+        int   device_id            = device_param->device_id;
+        char *device_name          = device_param->device_name;
+        u32   device_processors    = device_param->device_processors;
+        u64   device_maxmem_alloc  = device_param->device_maxmem_alloc;
+        u64   device_global_mem    = device_param->device_global_mem;
+        u64   device_available_mem = device_param->device_available_mem;
+
+        PyObject *device_dict = PyDict_New();
+        PyDict_SetItemString(device_dict, "device_id", Py_BuildValue ("i", device_id));
+        PyDict_SetItemString(device_dict, "device_name", Py_BuildValue ("s", device_name));
+        PyDict_SetItemString(device_dict, "device_processors", Py_BuildValue ("i", device_processors));
+        PyDict_SetItemString(device_dict, "device_maxmem_alloc", PyLong_FromUnsignedLong (device_maxmem_alloc));
+        PyDict_SetItemString(device_dict, "device_global_mem", PyLong_FromUnsignedLong (device_global_mem));
+        PyDict_SetItemString(device_dict, "device_available_mem", PyLong_FromUnsignedLong (device_available_mem));
+        PyDict_SetItemString(device_dict, "device_skipped", PyBool_FromLong (device_param->skipped));
+
+        PyList_Append(devices_list, device_dict);
+        Py_DECREF(device_dict);
+      }
+
+      PyObject *platform_dict = PyDict_New();
+      PyDict_SetItemString(platform_dict, "platform_type", Py_BuildValue ("s", "opencl"));
+      PyDict_SetItemString(platform_dict, "opencl_platform_version", Py_BuildValue ("s", opencl_platform_version));
+      PyDict_SetItemString(platform_dict, "opencl_platforms_idx", Py_BuildValue ("i", opencl_platforms_idx));
+      PyDict_SetItemString(platform_dict, "opencl_platform_vendor", Py_BuildValue ("s", opencl_platform_vendor));
+      PyDict_SetItemString(platform_dict, "devices", devices_list);
+
+      PyList_Append(platforms_list, platform_dict);
+      Py_DECREF(platform_dict);
+
+    }
+    return platforms_list;
+  }
+
+  Py_INCREF (Py_None);
+  return Py_None;
+}
+
+
 PyDoc_STRVAR(hashcat_status_get_status__doc__,
 "Return status info struct as a Python dictionary\n\n");
 
@@ -836,13 +921,13 @@ static PyObject *hashcat_status_get_status (hashcatObject * self, PyObject * noa
                 const device_info_t *device_info = hashcat_status->device_info_buf + device_id;
                 if (device_info->skipped_dev == true) continue;
                 if (device_info->skipped_warning_dev == true) continue;
-	        const int temp = hm_get_temperature_with_devices_idx (self->hashcat_ctx, device_id);
-	        const int id_len = snprintf( NULL, 0, "%d", device_id);
-	        char *dev_id = malloc(id_len + 1);
-	        snprintf(dev_id, id_len + 1, "%d", device_id);
-	        PyDict_SetItemString(temp_dict, dev_id, Py_BuildValue ("i", temp));
-	        PyList_Append(temps_list, temp_dict);
-            	device_num++;
+                const int temp = hm_get_temperature_with_devices_idx (self->hashcat_ctx, device_id);
+                const int id_len = snprintf( NULL, 0, "%d", device_id);
+                char *dev_id = malloc(id_len + 1);
+                snprintf(dev_id, id_len + 1, "%d", device_id);
+                PyDict_SetItemString(temp_dict, dev_id, Py_BuildValue ("i", temp));
+                PyList_Append(temps_list, temp_dict);
+            	  device_num++;
             }
         }
 	  PyDict_SetItemString(stat_dict, "Session", Py_BuildValue ("s", hashcat_status->session));
@@ -880,6 +965,14 @@ static PyObject *hashcat_status_get_status (hashcatObject * self, PyObject * noa
   }
 }
 
+PyDoc_STRVAR(hashcat_status_get_log__doc__,
+"Return hashcat logs as Python string\n\n");
+
+static PyObject *hashcat_status_get_log (hashcatObject * self, PyObject * noargs)
+{
+    char *log = hashcat_get_log(self->hashcat_ctx);
+    return Py_BuildValue ("s", log);
+}
 
 
 
@@ -5963,7 +6056,9 @@ static PyMethodDef hashcat_methods[] = {
   {"hashcat_session_bypass", (PyCFunction) hashcat_hashcat_session_bypass, METH_NOARGS, hashcat_session_bypass__doc__},
   {"hashcat_session_checkpoint", (PyCFunction) hashcat_hashcat_session_checkpoint, METH_NOARGS, hashcat_session_checkpoint__doc__},
   {"hashcat_session_quit", (PyCFunction) hashcat_hashcat_session_quit, METH_NOARGS, hashcat_session_quit__doc__},
+  {"hashcat_backend_info", (PyCFunction) hashcat_hashcat_backend_info, METH_NOARGS, hashcat_backend_info__doc__},
   {"hashcat_status_get_status", (PyCFunction) hashcat_status_get_status, METH_NOARGS, hashcat_status_get_status__doc__},
+  {"hashcat_status_get_log", (PyCFunction) hashcat_status_get_log, METH_NOARGS, hashcat_status_get_log__doc__},
   {"status_get_device_info_cnt", (PyCFunction) hashcat_status_get_device_info_cnt, METH_NOARGS, status_get_device_info_cnt__doc__},
   {"status_get_device_info_active", (PyCFunction) hashcat_status_get_device_info_active, METH_NOARGS, status_get_device_info_active__doc__},
   {"status_get_skipped_dev", (PyCFunction) hashcat_status_get_skipped_dev, METH_VARARGS, status_get_skipped_dev__doc__},
