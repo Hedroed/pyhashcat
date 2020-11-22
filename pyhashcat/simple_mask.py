@@ -5,7 +5,6 @@ import sys
 from time import sleep
 from pyhashcat import Hashcat
 
-
 def show_devices(backend_infos):
     if backend_infos is None:
         print("No backend")
