@@ -47,16 +47,20 @@ def show_devices(backend_infos):
 logs_buffer = []
 
 def cracked_callback(sender, plain="", signal=None):
-    print("CRACKED-", id(sender), "EVENT_CRACKER_HASH_CRACKED", plain)
+    print("[*] CRACKED", id(sender), "EVENT_CRACKER_HASH_CRACKED", plain)
 
 def started_callback(sender, plain="", signal=None):
-    print("START-", id(sender), "EVENT_CRACKER_STARTING")
+    print("[*] START", id(sender), "EVENT_CRACKER_STARTING")
 
 def finished_callback(sender, plain="", signal=None):
-    print("FIN-", id(sender), "EVENT_CRACKER_FINISHED")
+    print("[*] FIN", id(sender), "EVENT_CRACKER_FINISHED")
+
+def keyspace_callback(sender, plain="", signal=None):
+    ks = sender.status_get_progress_end()
+    print("[*] KEYSAPCE", id(sender), "EVENT_CALCULATED_WORDS_BASE", ks)
 
 def any_callback(sender, plain="", signal=None):
-    print("ANY", signal, sender.status_get_status_string(), plain)
+    print("\033[90m[-] ANY", signal, sender.status_get_status_string(), plain,"\033[0m")
 
 def log_callback_error(sender, plain="", signal=None):
     log = "ERROR %s" % sender.hashcat_status_get_log()
@@ -84,29 +88,42 @@ hc = Hashcat()
 
 # To view event types
 # hc.event_types
-print("[!] Hashcat object init with id: ", id(hc))
-print("[!] cb_id cracked: ", hc.event_connect(callback=cracked_callback, signal="EVENT_CRACKER_HASH_CRACKED"))
-print("[!] cb_id started: ", hc.event_connect(callback=started_callback, signal="EVENT_CRACKER_STARTING"))
-print("[!] cb_id finished: ", hc.event_connect(callback=finished_callback, signal="EVENT_CRACKER_FINISHED"))
-print("[!] cb_id log: ", hc.event_connect(callback=log_callback_error, signal="EVENT_LOG_ERROR"))
-print("[!] cb_id log: ", hc.event_connect(callback=log_callback_info, signal="EVENT_LOG_INFO"))
-print("[!] cb_id log: ", hc.event_connect(callback=log_callback_warning, signal="EVENT_LOG_WARNING"))
-print("[!] cb_id log: ", hc.event_connect(callback=log_callback_advice, signal="EVENT_LOG_ADVICE"))
-print("[!] cb_id any: ", hc.event_connect(callback=any_callback, signal="ANY"))
+print("[!] Hashcat object init with id:", id(hc))
+print("[!] cb_id cracked:", hc.event_connect(callback=cracked_callback, signal="EVENT_CRACKER_HASH_CRACKED"))
+print("[!] cb_id started:", hc.event_connect(callback=started_callback, signal="EVENT_CRACKER_STARTING"))
+print("[!] cb_id finished:", hc.event_connect(callback=finished_callback, signal="EVENT_CRACKER_FINISHED"))
+print("[!] cb_id keyspace:", hc.event_connect(callback=keyspace_callback, signal="EVENT_CALCULATED_WORDS_BASE"))
+print("[!] cb_id log:", hc.event_connect(callback=log_callback_error, signal="EVENT_LOG_ERROR"))
+print("[!] cb_id log:", hc.event_connect(callback=log_callback_info, signal="EVENT_LOG_INFO"))
+print("[!] cb_id log:", hc.event_connect(callback=log_callback_warning, signal="EVENT_LOG_WARNING"))
+print("[!] cb_id log:", hc.event_connect(callback=log_callback_advice, signal="EVENT_LOG_ADVICE"))
+print("[!] cb_id any:", hc.event_connect(callback=any_callback, signal="ANY"))
 
 
-hc.hash = "ffc1aeeaa6027fa2a6f5bd099cfbdd99"
-hc.mask = "?1?1?1?1?1?1?1"
-hc.custom_charset_1 = "BonjuR"
+# hc.hash = "md5_hash.txt"
+# hc.hash = "ffc1aeeaa6027fa2a6f5bd099cfbdd99" # BonjouR
+# hc.hash = "f6971c95b22f3727225277bc942aa5f6" # Bonjour123
+hc.hash = '/home/hedroed/Projects/pwnagotchi/crack/NathanPhone_AP.hccapx'
+
+# hc.mask = "lefromage?d?d?d"
+# hc.mask = "B?1?1?1?1?1?1"
+# hc.custom_charset_1 = "BonjuR"
 # hc.custom_charset_1 = "?l?u"
+hc.rules = ["/usr/share/doc/hashcat/rules/best64.rule"]
+hc.rp_files_cnt = 1
+
+# hc.dict1 = "/home/hedroed/Security/wordlists/rockyou.txt"
+hc.dict1 = "./wl_small.txt"
 
 # hc.quiet = True
-# hc.potfile_disable = True
-# hc.left = True
+# hc.keyspace = True
+hc.potfile_disable = True
 hc.outfile = os.path.join(os.path.expanduser('.'), "outfile.txt")
 print("[+] Writing to ", hc.outfile)
-hc.attack_mode = 3
-hc.hash_mode = 0
+hc.attack_mode = 0
+# hc.attack_mode = 3
+# hc.hash_mode = 0
+hc.hash_mode = 2500
 hc.workload_profile = 2
 
 # cracked = []
@@ -116,6 +133,7 @@ try:
     err_code = hc.hashcat_session_execute(hc_path="/home/hedroed/tmp/hashcat/share/hashcat")
 except SystemError as e:
     print("Exception %s" % e)
+
 else:
     print("[+] Error code %s" % err_code)
 
@@ -123,7 +141,9 @@ else:
         # hashcat should be running in a background thread
         # wait for it to finishing cracking
 
-        show_devices(hc.hashcat_backend_info())
+        dev = hc.hashcat_backend_info()
+        print(dev)
+        show_devices(dev)
 
         i = 0
         while True:
@@ -144,15 +164,17 @@ else:
             # if status == "Running":
                 # progress = hc.status_get_progress_finished_percent()
 
-            print("%.2f%%" % progress, end='\r', flush=True)
+            # print("%.2f%%" % progress, end='\r', flush=True)
 
-            if status == "Cracked" or status == "Aborted":
+            # print(hc.hashcat_status_get_status())
+
+            if status == "Cracked" or status == "Aborted" or status == "Exhausted":
                 break
-
 
             sleep(.1)
 
     else:
+        print("ERROR CODE %d" % err_code)
         print("STATUS: ", hc.status_get_status_string())
 
 print("STATUS: ", hc.status_get_status_string())

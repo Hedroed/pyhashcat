@@ -3,7 +3,7 @@
 // Email: rk5devmail@gmail.com
 // License: MIT
 //
-
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <assert.h>
 #include <pthread.h>
@@ -194,7 +194,8 @@ static void event_dispatch(char *esignal, hashcat_ctx_t * hashcat_ctx, const voi
             else
             {
 
-              args = Py_BuildValue("(O,s#,s)", handlers[ref].hc_self, buf, len, esignal);
+              Py_ssize_t py_len = len;
+              args = Py_BuildValue("(O,y#,s)", handlers[ref].hc_self, buf, py_len, esignal);
               result = PyObject_Call(handlers[ref].callback, args, NULL);
 
               if(PyErr_Occurred())
@@ -257,8 +258,8 @@ static void event (const u32 id, hashcat_ctx_t * hashcat_ctx, const void *buf, c
     case EVENT_MONITOR_NOINPUT_ABORT:           size = asprintf(&esignal, "%s", "EVENT_MONITOR_NOINPUT_ABORT"); break;
     case EVENT_BACKEND_SESSION_POST:            size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_POST"); break;
     case EVENT_BACKEND_SESSION_PRE:             size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_PRE"); break;
-    case EVENT_BACKEND_DEVICE_INIT_POST:        size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_PRE"); break;
-    case EVENT_BACKEND_DEVICE_INIT_PRE:         size = asprintf(&esignal, "%s", "EVENT_BACKEND_SESSION_PRE"); break;
+    case EVENT_BACKEND_DEVICE_INIT_POST:        size = asprintf(&esignal, "%s", "EVENT_BACKEND_DEVICE_INIT_POST"); break;
+    case EVENT_BACKEND_DEVICE_INIT_PRE:         size = asprintf(&esignal, "%s", "EVENT_BACKEND_DEVICE_INIT_PRE"); break;
     case EVENT_OUTERLOOP_FINISHED:              size = asprintf(&esignal, "%s", "EVENT_OUTERLOOP_FINISHED"); break;
     case EVENT_OUTERLOOP_MAINSCREEN:            size = asprintf(&esignal, "%s", "EVENT_OUTERLOOP_MAINSCREEN"); break;
     case EVENT_OUTERLOOP_STARTING:              size = asprintf(&esignal, "%s", "EVENT_OUTERLOOP_STARTING"); break;
@@ -497,6 +498,8 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
     return NULL;
   }
 
+  //TODO: Improve error message
+  //Maybe: force these options to false
   const PyObject *bad_rtn_code = Py_BuildValue ("i", -1);
   if (self->user_options->example_hashes == true) return bad_rtn_code;
   if (self->user_options->keyspace       == true) return bad_rtn_code;
@@ -525,16 +528,35 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
 
   } else {
 
+    if (self->hash == NULL)
+    {
+      PyErr_SetString (PyExc_RuntimeError, "Hash source not set");
+      Py_INCREF (Py_None);
+      return Py_None;
+    }
+
+    char* hash_string;
+    
+    if (PyBytes_Check(self->hash)) {
+      hash_string = PyBytes_AS_STRING (self->hash);
+
+    } else if(PyUnicode_Check(self->hash)) {
+      hash_string = PyUnicode_AsUTF8 (self->hash);
+
+    } else {
+      PyErr_SetString (PyExc_TypeError, "The hash attribute value must be a string or bytes");
+      Py_INCREF (Py_None);
+      return Py_None;
+    }
+
     switch (self->user_options->attack_mode)
     {
-
 
     // 0 | Straight
     case 0:
 
       if (self->dict1 == NULL)
       {
-
         PyErr_SetString (PyExc_RuntimeError, "Undefined dictionary");
         Py_INCREF (Py_None);
         return Py_None;
@@ -543,7 +565,7 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
       self->hc_argc = 2;
       hc_argv_size = self->hc_argc + 1;
       hc_argv = (char **) realloc (hc_argv, sizeof (char *) * (hc_argv_size));
-      hc_argv[0] = PyUnicode_AsUTF8 (self->hash);
+      hc_argv[0] = hash_string;
       hc_argv[1] = PyUnicode_AsUTF8 (self->dict1);
       hc_argv[2] = NULL;
       self->user_options->hc_argc = self->hc_argc;
@@ -572,7 +594,7 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
       self->hc_argc = 3;
       hc_argv_size = self->hc_argc + 1;
       hc_argv = (char **) realloc (hc_argv, sizeof (char *) * (hc_argv_size));
-      hc_argv[0] = PyUnicode_AsUTF8 (self->hash);
+      hc_argv[0] = hash_string;
       hc_argv[1] = PyUnicode_AsUTF8 (self->dict1);
       hc_argv[2] = PyUnicode_AsUTF8 (self->dict2);
       hc_argv[3] = NULL;
@@ -595,7 +617,7 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
       self->hc_argc = 2;
       hc_argv_size = self->hc_argc + 1;
       hc_argv = (char **) realloc (hc_argv, sizeof (char *) * (hc_argv_size));
-      hc_argv[0] = PyUnicode_AsUTF8 (self->hash);
+      hc_argv[0] = hash_string;
       hc_argv[1] = PyUnicode_AsUTF8 (self->mask);
       hc_argv[2] = NULL;
       self->user_options->hc_argc = self->hc_argc;
@@ -625,7 +647,7 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
       self->hc_argc = 3;
       hc_argv_size = self->hc_argc + 1;
       hc_argv = (char **) realloc (hc_argv, sizeof (char *) * (hc_argv_size));
-      hc_argv[0] = PyUnicode_AsUTF8 (self->hash);
+      hc_argv[0] = hash_string;
       hc_argv[1] = PyUnicode_AsUTF8 (self->dict1);
       hc_argv[2] = PyUnicode_AsUTF8 (self->mask);
       hc_argv[3] = NULL;
@@ -655,7 +677,7 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
       self->hc_argc = 3;
       hc_argv_size = self->hc_argc + 1;
       hc_argv = (char **) realloc (hc_argv, sizeof (char *) * (hc_argv_size));
-      hc_argv[0] = PyUnicode_AsUTF8 (self->hash);
+      hc_argv[0] = hash_string;
       hc_argv[1] = PyUnicode_AsUTF8 (self->mask);
       hc_argv[2] = PyUnicode_AsUTF8 (self->dict1);
       hc_argv[3] = NULL;
@@ -671,14 +693,6 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
       return Py_None;
 
     }
-  }
-
-  // Using backend_info to bypass hash requirement
-  if ( !self->user_options->backend_info && self->hash == NULL)
-  {
-    PyErr_SetString (PyExc_RuntimeError, "Hash source not set");
-    Py_INCREF (Py_None);
-    return Py_None;
   }
 
   /**
@@ -708,6 +722,9 @@ static PyObject *hashcat_hashcat_session_execute (hashcatObject * self, PyObject
   rtn = pthread_create(&hThread, NULL, &hc_session_exe_thread, (void *)self);
 
   Py_END_ALLOW_THREADS
+  
+  // int rtn;
+  // rtn = hc_session_exe_thread(self);
 
   return Py_BuildValue ("i", rtn);
 }
@@ -1358,7 +1375,7 @@ static PyObject *hashcat_status_get_hash_name (hashcatObject * self, PyObject * 
   const char *rtn;
 
   rtn = status_get_hash_name (self->hashcat_ctx);
-  return Py_BuildValue ("i", rtn);
+  return Py_BuildValue ("s", rtn);
 }
 
 
@@ -1704,7 +1721,7 @@ static PyObject *hashcat_status_get_progress_end (hashcatObject * self, PyObject
   u64 rtn;
 
   rtn = status_get_progress_end (self->hashcat_ctx);
-  return Py_BuildValue ("i", rtn);
+  return PyLong_FromUnsignedLong(rtn);
 }
 
 PyDoc_STRVAR(status_get_progress_ignore__doc__,
@@ -2107,10 +2124,10 @@ static int hashcat_sethash (hashcatObject * self, PyObject * value, void *closur
     return -1;
   }
 
-  if (!PyUnicode_Check (value))
+  if (!PyBytes_Check(value) && !PyUnicode_Check(value))
   {
 
-    PyErr_SetString (PyExc_TypeError, "The hash attribute value must be a string");
+    PyErr_SetString (PyExc_TypeError, "The hash attribute value must be a string or bytes");
     return -1;
   }
 
