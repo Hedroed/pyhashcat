@@ -10,7 +10,7 @@ import os
 import sys
 
 hc_lib_path = '/usr/local/lib'
-hc_lib = 'libhashcat.so' 
+hc_lib = 'hashcat'
 try:
 	files = os.listdir(hc_lib_path)
 	for file_ in files:
@@ -22,7 +22,7 @@ except Exception as e:
 
 pyhashcat_module = Extension('pyhashcat',
 							include_dirs = ['hashcat/include', 'hashcat/deps/OpenCL-Headers', 'hashcat/OpenCL', 'hashcat', 'hashcat/deps/zlib', 'hashcat/deps/LZMA-SDK/C'],
-							library_dirs = [hc_lib_path],
+							library_dirs = [hc_lib_path,'/home/hedroed/tmp/hashcat/lib'],
 							libraries = [hc_lib],
 							extra_link_args = ['-shared', '-Wl,-R/usr/local/lib'],
 							sources = ['pyhashcat.c'],

@@ -31,6 +31,17 @@ python setup.py build_ext -R /usr/local/lib
 sudo python setup.py install
 ```
 
+### Simple Test:
+
+```
+user@host:~/pyHashcat/pyhashcat$ python simple_mask.py
+-------------------------------
+---- Simple pyhashcat Test ----
+-------------------------------
+[+] Running hashcat
+STATUS:  Cracked
+8743b52063cd84097a65d1633f5c74f5  -->  hashcat
+```
 
 ### Help:
 

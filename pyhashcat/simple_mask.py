@@ -99,10 +99,10 @@ print("[!] cb_id log:", hc.event_connect(callback=log_callback_advice, signal="E
 print("[!] cb_id any:", hc.event_connect(callback=any_callback, signal="ANY"))
 
 
-# hc.hash = "md5_hash.txt"
+# hc.hash = "md5_hash.txt" # BonjouR
 # hc.hash = "ffc1aeeaa6027fa2a6f5bd099cfbdd99" # BonjouR
-# hc.hash = "f6971c95b22f3727225277bc942aa5f6" # Bonjour123
-hc.hash = '/home/hedroed/Projects/pwnagotchi/crack/NathanPhone_AP.hccapx'
+hc.hash = "f6971c95b22f3727225277bc942aa5f6" # Bonjour123
+# hc.hash = '/home/hedroed/Projects/pwnagotchi/crack/NathanPhone_AP.hccapx'
 
 # hc.mask = "lefromage?d?d?d"
 # hc.mask = "B?1?1?1?1?1?1"
@@ -119,10 +119,10 @@ hc.dict1 = "./wl_small.txt"
 hc.potfile_disable = True
 hc.outfile = os.path.join(os.path.expanduser('.'), "outfile.txt")
 print("[+] Writing to ", hc.outfile)
-hc.attack_mode = 0
-# hc.attack_mode = 3
-# hc.hash_mode = 0
-hc.hash_mode = 2500
+hc.attack_mode = 0 # Dictionnary attack
+# hc.attack_mode = 3 # Mask attack
+hc.hash_mode = 0 # md5
+# hc.hash_mode = 2500 # wpa2
 hc.workload_profile = 2
 
 # cracked = []
@@ -141,28 +141,17 @@ else:
         # wait for it to finishing cracking
 
         dev = hc.hashcat_backend_info()
+        print("---"*20)
         print(dev)
         show_devices(dev)
+        print("---"*20)
 
-        i = 0
         while True:
             # do something else while cracking
-            i += 1
-            if i%4 == 0:
-                ps = '-'
-            elif i%4 == 1:
-                ps = '\\'
-            elif i%4 == 2:
-                ps = '|'
-            elif i%4 == 3:
-                ps = '/'
-
             status = hc.status_get_status_string()
-            
-            progress = 0
-            # if status == "Running":
-                # progress = hc.status_get_progress_finished_percent()
 
+            progress = hc.status_get_progress_finished_percent()
+            print("%.2f%%" % progress)
             # print("%.2f%%" % progress, end='\r', flush=True)
 
             # print(hc.hashcat_status_get_status())
@@ -174,7 +163,6 @@ else:
 
     else:
         print("ERROR CODE %d" % err_code)
-        print("STATUS: ", hc.status_get_status_string())
 
 print("STATUS: ", hc.status_get_status_string())
 print("Logs:")
